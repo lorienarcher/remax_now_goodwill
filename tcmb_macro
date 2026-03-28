@@ -1,0 +1,42 @@
+import requests
+import pandas as pd
+
+import keys
+
+
+class TCMBRealEstateAnalyzer:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.base_url = "https://evds2.tcmb.gov.tr/service/evds/"
+
+    def get_housing_price_index(self, start_date="01-01-2023", end_date="01-03-2026"):
+        # TP.DK.BGD.A.YTL -> Türkiye Geneli Konut Fiyat Endeksi referans kodudur
+        url = f"{self.base_url}series=TP.DK.BGD.A.YTL&startDate={start_date}&endDate={end_date}&type=json"
+        headers = {"key": self.api_key}
+
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+            # Veriyi pandas DataFrame'e çevirip temizleyelim
+            df = pd.DataFrame(data['items'])
+            df = df[['Tarih', 'TP_DK_BGD_A_YTL']]
+            df.rename(columns={'TP_DK_BGD_A_YTL': 'Konut_Fiyat_Endeksi'}, inplace=True)
+            df['Konut_Fiyat_Endeksi'] = pd.to_numeric(df['Konut_Fiyat_Endeksi'], errors='coerce')
+
+            return df.dropna()
+        except Exception as e:
+            print(f"Veri çekilirken hata oluştu: {e}")
+            return None
+
+
+if __name__ == "__main__":
+    # Test için çalıştır
+    evds_api_key = keys.evds_api_key  # Buraya kendi anahtarını gireceksin
+    analyzer = TCMBRealEstateAnalyzer(evds_api_key)
+    macro_data = analyzer.get_housing_price_index()
+
+    if macro_data is not None:
+        print("TCMB Makro Verisi Başarıyla Çekildi:")
+        print(macro_data.tail())  # Son 5 aylık trendi göster
