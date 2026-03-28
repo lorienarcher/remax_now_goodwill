@@ -1,0 +1,93 @@
+import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from google import genai
+import pandas as pd
+import keys
+
+# Telegram Botumuzu başlatıyoruz
+bot = telebot.TeleBot(keys.telegram_bot_token)
+
+
+class RemaxStrategyAgent:
+    def __init__(self, gemini_api_key):
+        self.client = genai.Client(api_key=gemini_api_key)
+        self.model_name = 'gemini-3-flash-preview'
+
+    def generate_synthetic_portfolio(self):
+        data = {
+            "Ilce": ["Cankaya", "Cankaya", "Yenimahalle", "Etimesgut", "Golbasi"],
+            "Oda_Sayisi": ["3+1", "4+1", "2+1", "3+1", "Müstakil 5+1"],
+            "Fiyat_TL": [4500000, 7200000, 2800000, 3100000, 12500000],
+            "Ilanda_Kalma_Suresi_Gun": [15, 45, 8, 22, 60],
+            "Hedef_Kitle": ["Aile", "Lüks/Üst Düzey", "Öğrenci/Bekar", "Memur/Aile", "Yatırımcı/Lüks"]
+        }
+        return pd.DataFrame(data)
+
+    def generate_sales_strategy(self, portfolio_df):
+        portfolio_json = portfolio_df.to_json(orient="records", force_ascii=False)
+        prompt = f"""
+        Sen üst düzey bir Gayrimenkul Satış Stratejistisin. Remax Now ofisine ait portföy verisi:
+        {portfolio_json}
+        Bu veriyi analiz et ve 3 başlıkta kısa, net, eyleme geçirilebilir bir rapor hazırla:
+        1. Portföy Genel Durumu
+        2. Hedef Müşteri Profilleri
+        3. Aksiyon Planı
+        """
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
+        return response.text
+
+
+# Ajanımızı tek bir sefer başlatıyoruz
+agent = RemaxStrategyAgent(keys.gemini_api_key)
+
+
+# --- TELEGRAM BOT KOMUTLARI VE DİNLEYİCİLERİ ---
+
+@bot.message_handler(commands=['start', 'yardim'])
+def send_welcome(message):
+    """Kullanıcı bota girdiğinde veya /start yazdığında çalışır."""
+
+    # Buton menüsü oluşturuyoruz
+    markup = InlineKeyboardMarkup()
+    btn_rapor = InlineKeyboardButton("📊 Güncel Strateji Raporu Üret", callback_data="generate_report")
+    markup.add(btn_rapor)
+
+    karsilama_metni = (
+        "🏢 *Remax Now AI Asistanına Hoş Geldiniz!*\n\n"
+        "Ofisinizin güncel portföy durumunu analiz etmek ve "
+        "yapay zeka destekli satış stratejileri almak için aşağıdaki butona tıklayabilirsiniz."
+    )
+
+    bot.send_message(message.chat.id, karsilama_metni, parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "generate_report")
+def handle_report_request(call):
+    """Kullanıcı 'Strateji Raporu Üret' butonuna tıkladığında çalışır."""
+
+    # Kullanıcıya beklediğimizi bildiren bir mesaj atıyoruz
+    bot.answer_callback_query(call.id, "Yapay Zeka analize başladı...")
+    loading_msg = bot.send_message(call.message.chat.id,
+                                   "⏳ Veriler toplanıyor ve Gemini AI tarafından analiz ediliyor. Lütfen birkaç saniye bekleyin...")
+
+    try:
+        # Arka planda veriyi ve stratejiyi üretiyoruz
+        portfolio = agent.generate_synthetic_portfolio()
+        strategy_report = agent.generate_sales_strategy(portfolio)
+
+        # Bekleme mesajını silip gerçek raporu gönderiyoruz
+        bot.delete_message(call.message.chat.id, loading_msg.message_id)
+        bot.send_message(call.message.chat.id, f"📈 *GÜNLÜK STRATEJİ RAPORU*\n\n{strategy_report}",
+                         parse_mode="Markdown")
+
+    except Exception as e:
+        bot.edit_message_text(f"❌ Bir hata oluştu: {e}", call.message.chat.id, loading_msg.message_id)
+
+
+if __name__ == "__main__":
+    print("🤖 Remax Now AI Telegram Botu Çalışıyor... Kapatmak için CTRL+C yapabilirsiniz.")
+    # Botun sürekli mesajları dinlemesini (polling) sağlıyoruz
+    bot.infinity_polling()
