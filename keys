@@ -1,0 +1,4 @@
+gemini_api_key = "gemini key buraya girilir"
+evds_api_key = "evds key buraya girilir"
+telegram_chat_id = "chat id buraya girilir"
+telegram_bot_token = "bot token buraya girilir"
